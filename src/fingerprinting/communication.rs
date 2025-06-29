@@ -6,30 +6,10 @@ use std::time::Duration;
 use std::thread;
 use rand::seq::SliceRandom;
 use uuid::Uuid;
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
 
 use crate::fingerprinting::signature_format::DecodedSignature;
 use crate::fingerprinting::user_agent::USER_AGENTS;
 use crate::config::Config;
-
-// Generate hash for signature deduplication
-fn signature_hash(signature: &DecodedSignature) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    signature.sample_rate_hz.hash(&mut hasher);
-    signature.number_samples.hash(&mut hasher);
-    // Hash a portion of the signature data for uniqueness
-    if let Ok(uri) = signature.encode_to_uri() {
-        // Use last 100 characters of the URI as it contains the most unique part
-        let unique_part = if uri.len() > 100 {
-            &uri[uri.len() - 100..]
-        } else {
-            &uri
-        };
-        unique_part.hash(&mut hasher);
-    }
-    hasher.finish()
-}
 
 pub fn recognize_song_from_signature(signature: &DecodedSignature) -> Result<Value, Box<dyn Error>> {
     recognize_song_from_signature_with_config(signature, &Config::default())
@@ -151,11 +131,6 @@ fn try_shazam_request_with_config(url: &str, post_data: &Value, attempt: u32, co
     }
     
     Ok(response_json)
-}
-
-// Legacy function for backward compatibility  
-fn try_shazam_request(url: &str, post_data: &Value, attempt: u32) -> Result<Value, Box<dyn Error>> {
-    try_shazam_request_with_config(url, post_data, attempt, &Config::default())
 }
 
 pub fn obtain_raw_cover_image(url: &str) -> Result<Vec<u8>, Box<dyn Error>> {
