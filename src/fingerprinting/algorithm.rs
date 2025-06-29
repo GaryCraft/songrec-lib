@@ -5,8 +5,6 @@ use std::collections::HashMap;
 
 use crate::fingerprinting::hanning::HANNING_WINDOW_2048_MULTIPLIERS;
 use crate::fingerprinting::signature_format::{DecodedSignature, FrequencyBand, FrequencyPeak};
-#[cfg(feature = "ffmpeg")]
-use crate::utils::ffmpeg_wrapper::decode_with_ffmpeg;
 
 
 pub struct SignatureGenerator {
@@ -37,39 +35,39 @@ pub struct SignatureGenerator {
 
 impl SignatureGenerator {
     pub fn make_signature_from_file(file_path: &str) -> Result<DecodedSignature, Box<dyn Error>> {
+        // Check if file exists
+        if !std::path::Path::new(file_path).exists() {
+            return Err(format!("File not found: {}", file_path).into());
+        }
 
         // Decode the .WAV, .MP3, .OGG or .FLAC file
+        let file = std::fs::File::open(file_path)
+            .map_err(|e| format!("Failed to open file '{}': {}", file_path, e))?;
         
-        #[cfg(not(feature = "ffmpeg"))]
-        let decoder = rodio::Decoder::new(BufReader::new(std::fs::File::open(file_path)?));
-
-        #[cfg(feature = "ffmpeg")]
-        let decoder = {
-            let mut decoder = rodio::Decoder::new(BufReader::new(std::fs::File::open(file_path)?));
-
-            if let Err(ref _decoding_error) = decoder {
-                
-                // Try to decode with FFMpeg, if available, in case of failure with
-                // Rodio (most likely due to the use of a format unsupported by
-                // Rodio, such as .WMA or .MP4/.AAC)
-                
-                if let Some(new_decoder) = decode_with_ffmpeg(file_path) {
-                    decoder = Ok(new_decoder);
-                }
-            }
-
-            decoder
-        };
+        let decoder = rodio::Decoder::new(BufReader::new(file))
+            .map_err(|e| format!("Failed to decode audio file '{}': {}. Note: M4A/AAC format may not be fully supported on all platforms.", file_path, e))?;
         
         // Downsample the raw PCM samples to 16 KHz, and skip to the middle of the file
         // in order to increase recognition odds. Take 12 seconds of sample.
 
-        let converted_file = rodio::source::UniformSourceIterator::new(decoder?, 1, 16000);
+        let converted_file = rodio::source::UniformSourceIterator::new(decoder, 1, 16000);
 
         let raw_pcm_samples: Vec<i16> = converted_file.collect();
+        
+        // Check if we got any samples
+        if raw_pcm_samples.is_empty() {
+            return Err(format!("No audio samples could be extracted from file '{}'. The file may be corrupted or in an unsupported format.", file_path).into());
+        }
+
         let mut raw_pcm_samples_slice: &[i16] = &raw_pcm_samples;
 
         let slice_len = raw_pcm_samples_slice.len().min(12 * 16000);
+        
+        // Check if we have enough samples for fingerprinting (at least 3 seconds)
+        if slice_len < 3 * 16000 {
+            return Err(format!("Audio file '{}' is too short for fingerprinting. Need at least 3 seconds of audio, but only got {:.2} seconds.", 
+                file_path, slice_len as f32 / 16000.0).into());
+        }
 
         if raw_pcm_samples_slice.len() > 12 * 16000 {
             let middle = raw_pcm_samples.len() / 2;
@@ -102,10 +100,8 @@ impl SignatureGenerator {
                 number_samples: s16_mono_16khz_buffer.len() as u32,
                 frequency_band_to_sound_peaks: HashMap::new(),
             },
-        };
-
-        for chunk in s16_mono_16khz_buffer.chunks_exact(128) {
-            this.do_fft(chunk);
+        };        for chunk in s16_mono_16khz_buffer.chunks_exact(128) {
+            this.do_fft_internal(chunk);
 
             this.do_peak_spreading();
 
@@ -119,7 +115,50 @@ impl SignatureGenerator {
         this.signature
     }
 
-    fn do_fft(&mut self, s16_mono_16khz_buffer: &[i16]) {
+    /// Create a new SignatureGenerator instance for streaming recognition
+    pub fn new() -> Self {
+        Self {
+            ring_buffer_of_samples: vec![0i16; 2048],
+            ring_buffer_of_samples_index: 0,
+            reordered_ring_buffer_of_samples: vec![0.0f32; 2048],
+            fft_outputs: vec![vec![0.0f32; 1025]; 256],
+            fft_outputs_index: 0,
+            fft_object: RFft1D::<f32>::new(2048),
+            spread_fft_outputs: vec![vec![0.0f32; 1025]; 256],
+            spread_fft_outputs_index: 0,
+            num_spread_ffts_done: 0,
+            signature: DecodedSignature {
+                sample_rate_hz: 16000,
+                number_samples: 0,
+                frequency_band_to_sound_peaks: HashMap::new(),
+            },
+        }
+    }
+
+    /// Process audio samples and update the signature
+    /// This is a public version of do_fft that also updates sample count
+    pub fn do_fft(&mut self, s16_mono_16khz_buffer: &[i16], sample_rate: u32) {
+        // Update sample count
+        self.signature.number_samples += s16_mono_16khz_buffer.len() as u32;
+        self.signature.sample_rate_hz = sample_rate;
+
+        // Call the internal FFT processing
+        self.do_fft_internal(s16_mono_16khz_buffer);
+        
+        self.do_peak_spreading();
+        self.num_spread_ffts_done += 1;
+
+        if self.num_spread_ffts_done >= 46 {
+            self.do_peak_recognition();
+        }
+    }
+
+    /// Get the current signature
+    pub fn get_signature(&self) -> DecodedSignature {
+        self.signature.clone()
+    }
+
+    fn do_fft_internal(&mut self, s16_mono_16khz_buffer: &[i16]) {
 
         // Copy the 128 input s16le samples to the local ring buffer
 
