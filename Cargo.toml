@@ -1,23 +1,27 @@
 [package]
-name = "songrec"
+name = "songrec-lib"
 license = "GPL-3.0+"
-description = "A headless Shazam client library and CLI for cross-platform audio recognition"
+description = "A clean headless Shazam client library with comprehensive device management and API"
 homepage = "https://github.com/marin-m/SongRec"
 repository = "https://github.com/marin-m/SongRec"
-readme = "README_HEADLESS.md"
+readme = "README.md"
 keywords = ["shazam", "audio", "audio-fingerprinting", "music-recognition", "headless"]
 categories = ["multimedia::audio", "command-line-utilities", "api-bindings"]
-version = "0.4.3"
-authors = ["marin-m"]
-edition = "2018"
+version = "0.5.0"
+authors = ["marin-m", "enhanced-version"]
+edition = "2021"
 
 [lib]
 name = "songrec"
 path = "src/lib.rs"
 
 [[bin]]
-name = "songrec-cli"
+name = "songrec-lib-cli"
 path = "src/bin/songrec-cli.rs"
+
+[[example]]
+name = "library_usage"
+path = "examples/library_usage.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
