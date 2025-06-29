@@ -4,7 +4,7 @@ A clean, library-focused Rust crate for audio recognition using Shazam's algorit
 
 **Based on the original [SongRec](https://github.com/marin-m/SongRec) by marin-m.**
 
-**Please note that this library was heavily modified with the help of an LLM, which means some stuff needs work, it is functional but not fully battle-tested. nor optimized**
+> **Please note that this library was heavily modified with the help of an LLM, which means some stuff needs work, it is functional but not fully battle-tested. nor optimized**
 
 ## Features
 
@@ -134,4 +134,4 @@ GPL-3.0 (same as original SongRec)
 
 ## Credits
 
-This library is based on the original [SongRec](https://github.com/marin-m/SongRec) project by marin-m. This version focuses on providing a clean library interface with enhanced device management capabilities while maintaining the core audio fingerprinting functionality from the original project.
+This library is based on the original [SongRec](https://github.com/marin-m/SongRec) project by marin-m. This version focuses on providing a clean library interface while maintaining the core audio fingerprinting functionality from the original project.
