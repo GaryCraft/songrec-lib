@@ -5,6 +5,7 @@ A clean, library-focused Rust crate for audio recognition using Shazam's algorit
 **Based on the original [SongRec](https://github.com/marin-m/SongRec) by marin-m.**
 
 > **Please note that this library was heavily modified with the help of an LLM, which means some stuff needs work, it is functional but not fully battle-tested. nor optimized**
+> I'm not intending to give a lot of time to doing this myself, as this was mostly done for a test rather than something really production ready
 
 ## Features
 
