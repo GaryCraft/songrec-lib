@@ -43,28 +43,30 @@ impl AudioRecorder {
         _control_rx: mpsc::Receiver<()>,
     ) -> Result<mpsc::Receiver<Vec<i16>>, AudioError> {
         let host = cpal::default_host();
-        
+
         // Get the audio device
         let device = if let Some(name) = device_name {
             self.find_device_by_name(&host, &name)?
         } else {
-            host.default_input_device()
-                .ok_or_else(|| AudioError::DeviceError("No default input device found".to_string()))?
+            host.default_input_device().ok_or_else(|| {
+                AudioError::DeviceError("No default input device found".to_string())
+            })?
         };
 
         // Get the default input config
-        let config = device
-            .default_input_config()
-            .map_err(|e| AudioError::ConfigError(format!("Failed to get default input config: {}", e)))?;
+        let config = device.default_input_config().map_err(|e| {
+            AudioError::ConfigError(format!("Failed to get default input config: {}", e))
+        })?;
 
         // Create a channel for sending audio samples
         let (sample_tx, sample_rx) = mpsc::channel();
 
         // Start the audio stream
         let stream = self.create_input_stream(&device, config, sample_tx)?;
-        
+
         // Start the stream
-        stream.play()
+        stream
+            .play()
             .map_err(|e| AudioError::StreamError(format!("Failed to start stream: {}", e)))?;
 
         // We need to keep the stream alive somehow, but we can't move it to another thread on Windows
@@ -76,8 +78,9 @@ impl AudioRecorder {
 
     /// Find a device by name
     fn find_device_by_name(&self, host: &cpal::Host, name: &str) -> Result<Device, AudioError> {
-        let devices = host.input_devices()
-            .map_err(|e| AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e)))?;
+        let devices = host.input_devices().map_err(|e| {
+            AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e))
+        })?;
 
         for device in devices {
             if let Ok(device_name) = device.name() {
@@ -87,7 +90,22 @@ impl AudioRecorder {
             }
         }
 
-        Err(AudioError::DeviceError(format!("Device '{}' not found", name)))
+        let devices = host.output_devices().map_err(|e| {
+            AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e))
+        })?;
+
+        for device in devices {
+            if let Ok(device_name) = device.name() {
+                if device_name == name {
+                    return Ok(device);
+                }
+            }
+        }
+
+        Err(AudioError::DeviceError(format!(
+            "Device '{}' not found",
+            name
+        )))
     }
 
     /// Create an input stream for the given device
@@ -109,18 +127,19 @@ impl AudioRecorder {
 
         // Capture config values for use in closures
         let quiet_mode = self.config.quiet_mode;
-        
-        let stream = match config.sample_format() {
+
+        let stream: Result<Stream, cpal::BuildStreamError> = match config.sample_format() {
             cpal::SampleFormat::F32 => {
                 let channels = config.channels() as usize;
                 let sample_rate = config.sample_rate().0;
-                
+
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[f32], _: &cpal::InputCallbackInfo| {
                         // Process audio properly for fingerprinting
-                        let processed_samples = Self::process_audio_data_f32(data, channels, sample_rate);
-                        
+                        let processed_samples =
+                            Self::process_audio_data_f32(data, channels, sample_rate);
+
                         for sample in processed_samples {
                             sample_buffer.push(sample);
 
@@ -139,17 +158,18 @@ impl AudioRecorder {
                     },
                     None,
                 )
-            },
+            }
             cpal::SampleFormat::I16 => {
                 let channels = config.channels() as usize;
                 let sample_rate = config.sample_rate().0;
-                
+
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[i16], _: &cpal::InputCallbackInfo| {
                         // Process audio properly for fingerprinting
-                        let processed_samples = Self::process_audio_data_i16(data, channels, sample_rate);
-                        
+                        let processed_samples =
+                            Self::process_audio_data_i16(data, channels, sample_rate);
+
                         for sample in processed_samples {
                             sample_buffer.push(sample);
 
@@ -168,7 +188,7 @@ impl AudioRecorder {
                     },
                     None,
                 )
-            },
+            }
             cpal::SampleFormat::U16 => {
                 device.build_input_stream(
                     &stream_config,
@@ -193,9 +213,12 @@ impl AudioRecorder {
                     },
                     None,
                 )
-            },
+            }
             _ => {
-                return Err(AudioError::ConfigError(format!("Unsupported sample format: {:?}", config.sample_format())));
+                return Err(AudioError::ConfigError(format!(
+                    "Unsupported sample format: {:?}",
+                    config.sample_format()
+                )));
             }
         };
 
@@ -205,8 +228,12 @@ impl AudioRecorder {
     /// List available input devices
     pub fn list_input_devices() -> Result<Vec<String>, AudioError> {
         let host = cpal::default_host();
-        let devices = host.input_devices()
-            .map_err(|e| AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e)))?;
+        let devices = host.input_devices().map_err(|e| {
+            AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e))
+        })?;
+        let o_devices = host.input_devices().map_err(|e| {
+            AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e))
+        })?;
 
         let mut device_names = Vec::new();
         for device in devices {
@@ -214,10 +241,15 @@ impl AudioRecorder {
                 device_names.push(name);
             }
         }
+        for device in o_devices {
+            if let Ok(name) = device.name() {
+                device_names.push(name);
+            }
+        }
 
         Ok(device_names)
     }
-    
+
     /// Process F32 audio data - convert to mono, resample if needed, and convert to i16
     fn process_audio_data_f32(data: &[f32], channels: usize, sample_rate: u32) -> Vec<i16> {
         // Convert to mono if stereo
@@ -230,22 +262,27 @@ impl AudioRecorder {
             // Already mono or handle other channel configurations
             data.iter().step_by(channels).cloned().collect()
         };
-        
+
         // Simple downsampling if needed (note: this is basic, could be improved with proper filtering)
         let target_sample_rate = 16000u32;
         let downsampled_data: Vec<f32> = if sample_rate > target_sample_rate {
             let downsample_factor = sample_rate / target_sample_rate;
-            mono_data.iter().step_by(downsample_factor as usize).cloned().collect()
+            mono_data
+                .iter()
+                .step_by(downsample_factor as usize)
+                .cloned()
+                .collect()
         } else {
             mono_data
         };
-        
+
         // Convert to i16
-        downsampled_data.iter()
+        downsampled_data
+            .iter()
             .map(|&sample| (sample * 32767.0).clamp(-32768.0, 32767.0) as i16)
             .collect()
     }
-    
+
     /// Process I16 audio data - convert to mono, resample if needed
     fn process_audio_data_i16(data: &[i16], channels: usize, sample_rate: u32) -> Vec<i16> {
         // Convert to mono if stereo
@@ -255,19 +292,23 @@ impl AudioRecorder {
                 .map(|stereo_pair| ((stereo_pair[0] as i32 + stereo_pair[1] as i32) / 2) as i16)
                 .collect()
         } else {
-            // Already mono or handle other channel configurations  
+            // Already mono or handle other channel configurations
             data.iter().step_by(channels).cloned().collect()
         };
-        
+
         // Simple downsampling if needed
         let target_sample_rate = 16000u32;
         let downsampled_data: Vec<i16> = if sample_rate > target_sample_rate {
             let downsample_factor = sample_rate / target_sample_rate;
-            mono_data.iter().step_by(downsample_factor as usize).cloned().collect()
+            mono_data
+                .iter()
+                .step_by(downsample_factor as usize)
+                .cloned()
+                .collect()
         } else {
             mono_data
         };
-        
+
         downsampled_data
     }
 }
