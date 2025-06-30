@@ -91,7 +91,7 @@ impl AudioRecorder {
         }
 
         let devices = host.output_devices().map_err(|e| {
-            AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e))
+            AudioError::DeviceError(format!("Failed to enumerate output devices: {}", e))
         })?;
 
         for device in devices {
@@ -231,8 +231,8 @@ impl AudioRecorder {
         let devices = host.input_devices().map_err(|e| {
             AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e))
         })?;
-        let o_devices = host.input_devices().map_err(|e| {
-            AudioError::DeviceError(format!("Failed to enumerate input devices: {}", e))
+        let o_devices = host.output_devices().map_err(|e| {
+            AudioError::DeviceError(format!("Failed to enumerate output devices: {}", e))
         })?;
 
         let mut device_names = Vec::new();
