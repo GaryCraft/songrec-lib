@@ -54,10 +54,15 @@ impl AudioRecorder {
         };
 
         // Get the default input config
-        let config = device.default_input_config().map_err(|e| {
-            AudioError::ConfigError(format!("Failed to get default input config: {}", e))
+        let config = device.default_input_config().or_else(|input_err| {
+            // Try output config as fallback
+            device.default_output_config().map_err(|output_err| {
+                AudioError::ConfigError(format!(
+                    "Failed to get audio config: input error: {}, output error: {}",
+                    input_err, output_err
+                ))
+            })
         })?;
-
         // Create a channel for sending audio samples
         let (sample_tx, sample_rx) = mpsc::channel();
 

@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "songrec-lib"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "base64 0.12.3",
  "byteorder",
